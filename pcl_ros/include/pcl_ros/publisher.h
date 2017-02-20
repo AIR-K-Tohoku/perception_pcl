@@ -57,9 +57,10 @@ namespace pcl_ros
   {
     public:
       void 
-        advertise (ros::NodeHandle& nh, const std::string& topic, uint32_t queue_size)
+        advertise (ros::NodeHandle& nh, const std::string& topic, uint32_t queue_size,
+          const bool latch = false)
       {
-        pub_ = nh.advertise<sensor_msgs::PointCloud2>(topic, queue_size);
+        pub_ = nh.advertise<sensor_msgs::PointCloud2>(topic, queue_size, latch);
       }
 
       std::string 

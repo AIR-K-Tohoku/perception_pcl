@@ -67,6 +67,7 @@ class PCDGenerator
 
     string file_name_, cloud_topic_;
     double wait_;
+    bool latch_;
 
     pcl_ros::Publisher<sensor_msgs::PointCloud2> pub_;
 
@@ -76,7 +77,8 @@ class PCDGenerator
       // Maximum number of outgoing messages to be queued for delivery to subscribers = 1
 
       cloud_topic_ = "cloud_pcd";
-      pub_.advertise (nh_, cloud_topic_.c_str (), 1);
+      private_nh_.param("latch", latch_, false);
+      pub_.advertise (nh_, cloud_topic_.c_str (), 1, latch_);
       private_nh_.param("frame_id", tf_frame_, std::string("/base_link"));
       ROS_INFO ("Publishing data on topic %s with frame_id %s.", nh_.resolveName (cloud_topic_).c_str (), tf_frame_.c_str());
     }
@@ -99,31 +101,42 @@ class PCDGenerator
       int nr_points      = cloud_.width * cloud_.height;
       string fields_list = pcl::getFieldsList (cloud_);
       double interval = wait_ * 1e+6;
+      int pub_cnt = 0;
       while (nh_.ok ())
       {
-        ROS_DEBUG_ONCE ("Publishing data with %d points (%s) on topic %s in frame %s.", nr_points, fields_list.c_str (), nh_.resolveName (cloud_topic_).c_str (), cloud_.header.frame_id.c_str ());
-        cloud_.header.stamp = ros::Time::now ();
+        if (!latch_ || pub_cnt == 0)
+		{
+          ROS_DEBUG_ONCE ("Publishing data with %d points (%s) on topic %s in frame %s.", nr_points, fields_list.c_str (), nh_.resolveName (cloud_topic_).c_str (), cloud_.header.frame_id.c_str ());
+          cloud_.header.stamp = ros::Time::now ();
 
-        if (pub_.getNumSubscribers () > 0)
-        {
-          ROS_DEBUG ("Publishing data to %d subscribers.", pub_.getNumSubscribers ());
-          pub_.publish (cloud_);
+          if (pub_.getNumSubscribers () > 0)
+          {
+            ROS_DEBUG ("Publishing data to %d subscribers.", pub_.getNumSubscribers ());
+            pub_.publish (cloud_);
+            pub_cnt ++;
+          }
+          else
+          {
+            // check once a second if there is any subscriber
+            ros::Duration (1).sleep ();
+            continue;
+          }
         }
-        else
-        {
-					// check once a second if there is any subscriber
-          ros::Duration (1).sleep ();
-          continue;
-        }
-
-        usleep (interval);
 
         if (interval == 0)	// We only publish once if a 0 seconds interval is given
-				{
-					// Give subscribers 3 seconds until point cloud decays... a little ugly!
-		      ros::Duration (3.0).sleep ();
-          break;
-				}
+        {
+          if (!latch_)
+          {
+            // Give subscribers 3 seconds until point cloud decays... a little ugly!
+            ros::Duration (3.0).sleep ();
+            break;
+		  }
+          ros::Duration (1).sleep ();
+        }
+		else
+		{
+          usleep (interval);
+        }
       }
       return (true);
     }
